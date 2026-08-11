@@ -114,8 +114,33 @@ select{width:100%;padding:11px;border:1px solid #bfdee9;border-radius:11px;backg
   color:#0b6f3b;
 }
 </style>
+
+<style>
+#niniAccessGate{position:fixed;inset:0;z-index:99999;background:linear-gradient(135deg,#087aa9,#08a2df);display:flex;align-items:center;justify-content:center;padding:20px}
+#niniAccessBox{width:min(420px,100%);background:#fff;border-radius:20px;padding:24px;box-shadow:0 18px 55px #0004;text-align:center}
+#niniAccessBox h2{margin:0 0 7px;color:#075574}
+#niniAccessBox p{font-size:.86rem;color:#61747c;line-height:1.45}
+#niniAccessCode{width:100%;padding:13px 14px;border:2px solid #cdeaf4;border-radius:12px;font-size:1rem;text-align:center;text-transform:uppercase;outline:none}
+#niniAccessCode:focus{border-color:#08a2df}
+#niniAccessBtn{width:100%;margin-top:11px;padding:13px;border:0;border-radius:12px;background:#087aa9;color:white;font-size:.95rem;font-weight:900;cursor:pointer}
+#niniAccessBtn:disabled{opacity:.6;cursor:wait}
+#niniAccessMsg{min-height:22px;margin-top:10px;font-size:.8rem;font-weight:800}
+body.nini-locked>header,body.nini-locked>main,body.nini-locked>.nini-footer{visibility:hidden}
+</style>
+
 </head>
-<body>
+<body class="nini-locked">
+
+<div id="niniAccessGate">
+  <div id="niniAccessBox">
+    <h2>🔒 PRICE CHECKER</h2>
+    <p>Masukkan Access Code yang diberi oleh NINI™ untuk menggunakan Price Checker ini.</p>
+    <input id="niniAccessCode" type="text" autocomplete="off" placeholder="ACCESS CODE">
+    <button id="niniAccessBtn" type="button">UNLOCK</button>
+    <div id="niniAccessMsg"></div>
+  </div>
+</div>
+
 <header><div class="wrap">
 <h1>PRICE CHECKER</h1>
 
@@ -892,4 +917,146 @@ init();
   USE ONLY WITH PERMISSION FROM NINI™ • DO NOT DISTRIBUTE OR USE WITHOUT AUTHORISATION.<br>
   PRICE CHECKER
 </div>
+
+<script>
+(function(){
+  const API_URL = 'https://script.google.com/macros/s/AKfycbx6atvcP1XBrvJlkxerFL7ITlu9sHLoJ57chMBRzAo6VhlP4CuqeCcQ-H4Sp2_3WVrWjQ/exec';
+  const DEVICE_KEY = 'nini_price_checker_device_id_v1';
+  const RECHECK_MS = 60000; // semak semula setiap 60 saat
+  let activeCode = '';
+  let recheckTimer = null;
+
+  function deviceId(){
+    let id = localStorage.getItem(DEVICE_KEY);
+    if(!id){
+      id = (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'dev-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      localStorage.setItem(DEVICE_KEY,id);
+    }
+    return id;
+  }
+
+  async function checkAccess(code){
+    const res = await fetch(API_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({code:code,deviceId:deviceId()}),
+      cache:'no-store'
+    });
+    return await res.json();
+  }
+
+  function ensureGate(message){
+    if(!document.getElementById('niniAccessGate')){
+      const gate = document.createElement('div');
+      gate.id='niniAccessGate';
+      gate.innerHTML=`
+        <div id="niniAccessBox">
+          <h2>🔒 PRICE CHECKER</h2>
+          <p>Masukkan Access Code yang diberi oleh NINI™ untuk menggunakan Price Checker ini.</p>
+          <input id="niniAccessCode" type="text" autocomplete="off" placeholder="ACCESS CODE">
+          <button id="niniAccessBtn" type="button">UNLOCK</button>
+          <div id="niniAccessMsg"></div>
+        </div>`;
+      document.body.appendChild(gate);
+      bindGate();
+    }
+    document.body.classList.add('nini-locked');
+    const msg=document.getElementById('niniAccessMsg');
+    if(msg && message){
+      msg.style.color='#c1121f';
+      msg.textContent=message;
+    }
+  }
+
+  function bindGate(){
+    const btn=document.getElementById('niniAccessBtn');
+    const input=document.getElementById('niniAccessCode');
+    if(btn) btn.onclick=unlockPriceChecker;
+    if(input){
+      input.onkeydown=function(e){ if(e.key==='Enter') unlockPriceChecker(); };
+      setTimeout(()=>input.focus(),0);
+    }
+  }
+
+  function grant(code){
+    activeCode=code;
+    document.body.classList.remove('nini-locked');
+    const gate=document.getElementById('niniAccessGate');
+    if(gate) gate.remove();
+
+    if(recheckTimer) clearInterval(recheckTimer);
+    recheckTimer=setInterval(recheckAccess,RECHECK_MS);
+  }
+
+  function revoke(message){
+    activeCode='';
+    if(recheckTimer){ clearInterval(recheckTimer); recheckTimer=null; }
+    ensureGate(message || 'Access Revoked');
+  }
+
+  async function unlockPriceChecker(){
+    const input=document.getElementById('niniAccessCode');
+    const btn=document.getElementById('niniAccessBtn');
+    const msg=document.getElementById('niniAccessMsg');
+    const code=(input?.value || '').trim().toUpperCase();
+
+    if(!code){
+      msg.style.color='#c1121f';
+      msg.textContent='Masukkan Access Code dahulu.';
+      input.focus();
+      return;
+    }
+
+    btn.disabled=true;
+    btn.textContent='CHECKING...';
+    msg.style.color='#61747c';
+    msg.textContent='Semak access...';
+
+    try{
+      const data=await checkAccess(code);
+      if(data && data.success===true && String(data.status||'').toUpperCase()==='ACTIVE'){
+        grant(code);
+        return;
+      }
+      msg.style.color='#c1121f';
+      msg.textContent=(data && data.message) ? data.message : 'Access tidak dibenarkan.';
+    }catch(e){
+      msg.style.color='#c1121f';
+      msg.textContent='Tak dapat hubungi sistem access. Cuba lagi.';
+    }finally{
+      if(document.getElementById('niniAccessBtn')){
+        btn.disabled=false;
+        btn.textContent='UNLOCK';
+      }
+    }
+  }
+
+  async function recheckAccess(){
+    if(!activeCode) return;
+    try{
+      const data=await checkAccess(activeCode);
+      if(!(data && data.success===true && String(data.status||'').toUpperCase()==='ACTIVE')){
+        revoke((data && data.message) ? data.message : 'Access Revoked');
+      }
+    }catch(e){
+      // Jika internet/API terganggu sementara, jangan terus tendang user.
+      // Sistem akan cuba semula pada semakan berikutnya.
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded',function(){
+    document.body.classList.add('nini-locked');
+    bindGate();
+
+    // Bila user kembali ke tab/app, semak status terus.
+    document.addEventListener('visibilitychange',function(){
+      if(!document.hidden) recheckAccess();
+    });
+    window.addEventListener('focus',recheckAccess);
+  });
+})();
+</script>
+
 </body></html>
