@@ -927,14 +927,20 @@ init();
   let recheckTimer = null;
 
   function deviceId(){
-    let id = localStorage.getItem(DEVICE_KEY);
-    if(!id){
-      id = (window.crypto && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : 'dev-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-      localStorage.setItem(DEVICE_KEY,id);
+    try{
+      let id = localStorage.getItem(DEVICE_KEY);
+      if(!id){
+        id = 'pc-' + Math.random().toString(36).slice(2,10) + '-' + Date.now().toString(36);
+        localStorage.setItem(DEVICE_KEY,id);
+      }
+      return id;
+    }catch(e){
+      // Fallback if storage is restricted
+      if(!window.__niniDeviceId){
+        window.__niniDeviceId = 'pc-session-' + Math.random().toString(36).slice(2,10);
+      }
+      return window.__niniDeviceId;
     }
-    return id;
   }
 
   async function checkAccess(code){
